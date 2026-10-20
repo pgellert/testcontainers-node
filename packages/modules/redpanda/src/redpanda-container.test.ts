@@ -67,6 +67,16 @@ describe("RedpandaContainer", { timeout: 240_000 }, () => {
     // }
   });
 
+  it("should disable protected mode on Redpanda 26.3+", async () => {
+    await using container = await new RedpandaContainer(IMAGE).start();
+
+    const response = await fetch(`${container.getAdminAddress()}/v1/cluster_config`);
+
+    expect(response.status).toBe(200);
+    const clusterConfig = (await response.json()) as { protected_mode: boolean };
+    expect(clusterConfig.protected_mode).toBe(false);
+  });
+
   it("should connect to rest proxy", async () => {
     // connectToRestProxy {
     await using container = await new RedpandaContainer(IMAGE).start();

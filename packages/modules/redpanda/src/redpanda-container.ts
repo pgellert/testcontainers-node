@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { satisfies } from "compare-versions";
 import { compile } from "handlebars";
 import {
   AbstractStartedContainer,
@@ -30,9 +31,9 @@ export class RedpandaContainer extends GenericContainer {
     this.withExposedPorts(REDPANDA_PORT, REDPANDA_ADMIN_PORT, SCHEMA_REGISTRY_PORT, REST_PROXY_PORT)
       .withUser("root:root")
       .withWaitStrategy(Wait.forLogMessage("Successfully started Redpanda!"))
-      .withCopyFilesToContainer([
+      .withCopyContentToContainer([
         {
-          source: path.join(__dirname, "assets", "bootstrap.yaml"),
+          content: this.renderBootstrapFile(),
           target: "/etc/redpanda/.bootstrap.yaml",
         },
       ]);
@@ -85,6 +86,24 @@ export class RedpandaContainer extends GenericContainer {
       waitStrategy.withStartupTimeout(this.startupTimeoutMs);
     }
     await waitForContainer(client, dockerContainer, waitStrategy, boundPorts);
+  }
+
+  private renderBootstrapFile(): string {
+    const bootstrap = fs.readFileSync(path.join(__dirname, "assets", "bootstrap.yaml"), "utf-8");
+    // Redpanda 26.3+ enables protected_mode, which rejects unauthenticated non-loopback clients, i.e. every client
+    // on the mapped ports. It adds no protection here, as those ports are published on purpose.
+    return this.isV26_3OrLater() ? `${bootstrap}protected_mode: false\n` : bootstrap;
+  }
+
+  private isV26_3OrLater(): boolean {
+    if (this.imageName.tag === "latest") {
+      return true;
+    }
+    try {
+      return satisfies(this.imageName.tag, ">=26.3.0");
+    } catch {
+      return false;
+    }
   }
 
   private renderRedpandaFile(host: string, port: number): string {
